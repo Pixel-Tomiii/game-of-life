@@ -69,6 +69,10 @@ class GameOfWar():
                             - max=8
                             - min=1
                             - default=3
+            - output    whether or not the grid is showen each round (still
+                        shows the initial and final grid)
+                            - default=true
+                            - other=false
         """
         self.properties["width"] = 30
         self.validations["width"] = (between, (10, 100))
@@ -87,6 +91,9 @@ class GameOfWar():
         
         self.properties["to-kill"] = 3
         self.validations["to-kill"] = (between, (1, 8))
+
+        self.properties["output"] = "true"
+        self.validations["output"] = (lambda x: x.lower() in ("true", "false"), (,))
             
     def set_property(self, prop, val):
         """Sets the given property to the given value.
@@ -104,6 +111,8 @@ class GameOfWar():
         # Convert val to int if possible.
         if val.isdigit():
             val = int(val)
+        else:
+            val = val.lower()
 
         # Validate the value.
         if self._validate(prop, val):
@@ -391,15 +400,18 @@ class GameOfWar():
         self.output(grid, 0, sys.stdout)
 
         # Game loop.
-        while round_number <= self.properties["win-round"]:
+        while round_number < self.properties["win-round"]:
             current = time.time()
             # Only run on allocated refresh.
             if current - last_update > delta:
                 round_number += 1
                 self._update_cells()
                 grid = self._update_grid(self._generate_grid())
-                self.output(grid, round_number, sys.stdout)
                 last_update = current
+
+                # Output
+                if self.properties["output"] == "true":
+                    self.output(grid, round_number, sys.stdout)
 
                 # Find winner:
                 if len(self.teams) == 1:
@@ -409,6 +421,9 @@ class GameOfWar():
             # Calculate who won based on score.
             highest = sorted(self.teams.values(), key=lambda team:team.score, reverse=True)
             winner = highest[0]
+
+        if self.properties["output"] == "false":
+            self.output(grid, round_number, sys.stdout)
 
         print(f"The winner is:\n{str(winner)}")
                         
