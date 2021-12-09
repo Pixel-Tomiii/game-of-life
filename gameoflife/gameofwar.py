@@ -186,6 +186,7 @@ class GameOfWar():
                     if value == ".":
                         x += amount
                         continue
+                    
                     for x in range(x, x+amount):
                         # Team creation.
                         if value not in self.teams:
@@ -196,6 +197,7 @@ class GameOfWar():
                         cell = Cell(x, y, team, self.properties["death-age"])
                         self.cells[(x, y)] = cell
                         team.score += 1
+                    x += 1
                         
     def load_game(self, directory):
         """Loads a game from a directory.
@@ -289,9 +291,14 @@ class GameOfWar():
         for y_offset in range(-1, 2):
             for x_offset in range(-1, 2):
                 # Every position not including the current position.
-                if y_offset != 0 != x_offset:
-                    new_x = x + x_offset
-                    new_y = y + y_offset
+                if y_offset == 0 and x_offset == 0:
+                    continue
+                
+                new_x = x + x_offset
+                new_y = y + y_offset
+                # Positions within the boundaries.
+                if ((new_x >= 0 and new_x < self.properties["width"]) and
+                        (new_y >= 0 and new_y < self.properties["height"])):
                     # Cell is alive.
                     if (new_x, new_y) in self.cells:
                         alive.append(self.cells[(new_x, new_y)])
@@ -325,6 +332,9 @@ class GameOfWar():
                     new_cells[cell.position] = cell
                 else:
                     cell.team.score -= 1
+                    
+                    if cell.team.score == 0:
+                        del self.teams[cell.team.view]
 
         # Reviving dead cells.
         for cell in dead_cells:
@@ -343,7 +353,7 @@ class GameOfWar():
             # Find out who owns the new cell.
             dominant_teams = sorted(controllers.items(), key=lambda team:team[1], reverse=True)
             max_control = dominant_teams[0][1]
-            
+
             # Add teams with highest control to a list to determine which has the highest overall score.
             highest = []
             for team, control in dominant_teams:
@@ -373,7 +383,7 @@ class GameOfWar():
         The loop ends when a winner is determined.
         """       
         round_number = 0
-        last_update = 0
+        last_update = time.time()
         delta = 1 / self.properties["refresh"]
 
         # Display initial grid.
@@ -390,7 +400,18 @@ class GameOfWar():
                 grid = self._update_grid(self._generate_grid())
                 self.output(grid, sys.stdout)
                 last_update = current
-                    
+
+                # Find winner:
+                if len(self.teams) == 1:
+                    winner = self.teams.values()[0]
+                    break
+        else:
+            # Calculate who won based on score.
+            highest = sorted(self.teams.values(), key=lambda team:team.score, reverse=True)
+            winner = highest[0]
+
+        print(f"The winner is {str(winner)}")
+                        
     def output(self, grid, stream):
         """Writes the grid to the given output stream.
         Parameters:
