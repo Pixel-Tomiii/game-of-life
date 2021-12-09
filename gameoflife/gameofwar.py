@@ -16,10 +16,12 @@ neighbours if their neighbours is at least 3.
 The winning team is the team with the most cells after the round timer runs out
 or the last team standing (e.g one team left)
 """
+# TODO: use multiprocessing module to speed up
+# cell updates.
 import time
 import os
-import multiprocessing
-from sys import stdout
+import sys
+
 from gameoflife.cell import Cell
 from gameoflife.team import Team
 
@@ -34,6 +36,7 @@ class GameOfWar():
         self.properties = dict()
         self.validations = dict()
         self.cells = dict()
+        self.teams = dict()
         
         self.load_defaults()
 
@@ -121,17 +124,69 @@ class GameOfWar():
         func, args = self.validations["prop"]
         return func(val, *args)
 
-    def load_config(self, config):
+    def load_config(self, config_file):
         """Loads properties from a config into the properties dictionary.
 
         Parameters:
             - File path for the config.
+
+        Raises:
+            - FileNotFoundError
         """
         # Load configuration.
-        with open(config) as config:
+        with open(config_file) as config:
             for line in config:
                 self.set_property(*line.strip().split(":"))
 
+    def load_cells(self, cells_file):
+        """Loads cells from a .cells file.
+
+        Format for .cells has to work with matching .config file.
+        Format for .cells works like this:
+            Example: 6.3x2.
+                this represets 6 dead ('.') cells, 3 x cells and a further 2
+                dead cells. This is one row.
+
+        Parameters:
+            - cells_file    a path to a .cells file.
+
+        Raises:
+            - FileNotFoundError
+            - ValueError
+        """
+        with open(cells_file) as cells:
+            for y, line in enumerate(cells):
+                line = line.strip()
+                char_gen = iter(line)
+                x = 0
+                # Iterate through every 2 characters.
+                # Loop must be broken at some point.
+                while (amount := int(next(char_gen, -1)), value := next(char_gen, -1)):
+                    # Error reading line.
+                    if value == -1 and amount != -1:
+                        raise ValueError("Not enough values to fetch. Please check file formatting.")
+
+                    # Stop scanning the line.
+                    if amount == -1 == value:
+                        break
+
+                    # Not interested in dead cells.
+                    if value == ".":
+                        x += amount
+                        continue
+
+                    while x <= amount:
+                        x += 1
+                        # Team creation.
+                        if value not in self.teams:
+                            self.teams[value] = Team(value)
+                        team = self.teams[value]
+                        
+                        # Cell creation.
+                        cell = Cell(x, y, team, self.properties["death-age"])
+                        self.cells[(x, y)] = cell
+                        team.score += 1
+    
     def _generate_grid(self):
         """Generates a grid of dead cells of size width, height.
 
@@ -140,21 +195,19 @@ class GameOfWar():
         Returns:
             - a 2D array of dead cells.
         """
-        width = properties["width"]
-        height = properties["height"]
+        width = self.properties["width"]
+        height = self.properties["height"]
         return [["." for x in range(width)] for y in range(height)]
 
     def load_game(self, directory):
         """Loads a game from a directory.
 
-        Directory must include:
-            - a .data file
+        Directory must include only one of both:
             - a .config file
             - a .cells file
 
-        Directory loading is relative and must start with a '/'.
-        Directory must only contain 1 file of each type. Other files are allowed
-        but must not end in .data, .config or .cells
+        Directory loading is relative and must only contain 1 file of each type.
+        Other files are allowed but must not end in .config or .cells
         
         Parameters:
             - directory     A string path to a directory containing a game
@@ -164,25 +217,182 @@ class GameOfWar():
             - ValueError
             - FileNotFoundError
         """
+        # Insert a "/" where needed.
+        if not directory.startswith("/"):
+            directory = "/" + directory
+        if not directory.endswith("/"):
+            directory = directory + "/"
+        
         files_in_dir = os.listdir(os.curdir + directory)
-        # Count number of files ending in .data, .config and .cells.
-        reserved = {"data":0, "config":0, "cells":0}
+        needed_files = dict()
+        
+        # Count number of files ending in .config and .cells.
+        reserved = {"config":0, "cells":0}        
         for file in files_in_dir:
             file_type = file.split(".")[-1]
 
             # Check if needed file.
             if file_type in reserved.keys():
                 reserved[file_type] += 1
-                # Check cound.
+                needed_files[file_type] = file
+                # Check count.
                 if reserved[file_type] > 1:
                     break
         else:
             # Check all files are there.
-            if sum(reserved.values()) == 3:
-                return
+            if sum(reserved.values()) == len(reserved):
+                # Load information.
+                # Config data.
+                self.load_config(directory + needed_files["config"])
+                self.load_grid(directory + needed_files["cells"])
 
         raise ValueError("Expected 1 of each unique file (.data, .config, .cells).")
+
+    def _update_grid(self, grid):
+        """Places all the cells in the given grid.
+        Parameters:
+            - grid      The grid to place the cells in
+            - cells     The cells to place in the grid
+
+        Returns:
+            - A new grid showing the states of all cells.
+        """
+        for (x, y), cell in cells.items():
+            grid[y][x] = cell.team.view
+            
+        return grid
+
+    def _get_neighbours(self, x, y):
+        """Fetches all neighbours around the given cell.
+
+        Parameters:
+            - cell      The cell to get the neighbours of.
+        Returns:
+            A tuple in the format (alive_cells, dead_cells)
+                - alive_cells: a list of Cell objects
+                - dead_cells: a list of x, y tuples
+        """
+        alive = []
+        dead = []
         
+        for y_offset in range(-1, 2):
+            for x_offset in range(-1, 2):
+                # Every position not including the current position.
+                if y_offset != 0 != x_offset:
+                    new_x = x + x_offset
+                    new_y = y + y_offset
+                    # Cell is alive.
+                    if (new_x, new_y) in self.cells:
+                        alive.append(self.cells[(new_x, new_y)])
+                    else:
+                        dead.append((new_x, new_y))
+        return alive, dead
+
+    def _update_cells(self):
+        """Updates the state of all of the cells in the game."""
+        new_cells = dict()
+        dead_cells = set()
+
+        for cell in cells.values():
+            # Cell dies to old age.
+            if cell.update():
+                alive_neighbours, dead_neighbours = self._get_neighbours(*cell.position)
+
+                # Add dead neighbours to set to work through after working alive cells.
+                for cell in dead_neighbours:
+                    dead_cells.add(cell)
+                
+                # Count number of enemy cells.
+                enemies = 0
+                for neighbour in alive_neighbours:
+                    # Check if cell is an enemy.
+                    if neighbour.team != cell.team:
+                        enemies += 1
+
+                # Add new cell if it is to not be killed.    
+                if enemies < self.properties["to-kill"]:
+                    new_cells[cell.position] = cell
+                else:
+                    cell.team.score -= 1
+
+        # Reviving dead cells.
+        for cell in dead_cells:
+            alive_neighbours, dead_neighbours = self._get_neighbours(*cell)
+            # Need at least 3 alive cells.
+            if len(alive_cells < 3):
+                continue
+
+            controllers = dict()
+            for neighbour in alive_neighbours:
+                # Add team.
+                if neighbour.team not in controllers:
+                    controllers[neighbour.team] = 0
+                controllers[neighbour.team] += 1
+
+            # Find out who owns the new cell.
+            dominant_teams = sorted(controllers.items(), key=lambda team:team[1], reverse=True)
+            max_control = dominant_teams[0][1]
+            
+            # Add teams with highest control to a list to determine which has the highest overall score.
+            highest = []
+            for team, control in dominant_teams:
+                # Break out of loop.
+                if control < max_control:
+                    break
+                highest.append(team)
+                
+            # Sort so highest scoring team is first.
+            highest = sorted(highest, key=lambda team:team.score, reverse=True)
+            # In event 2 teams have the same score, the cell stays dead.
+            if len(highest) > 1 and highest[0].score == highest[1].score:
+                continue
+            else:
+                dominant = highest[0]
+                
+            new_cells[cell] = Cell(cell[0], cell[1], dominant, self.properties["death_age"])
+            dominant.score += 1
+
+        # Overwrite self.cells
+        self.cells = new_cells
+
+    def start(self):
+        """The main loop of the game of life war.
+
+        Runs a constant loop (updating x times per second based on refresh property)
+        The loop ends when a winner is determined.
+        """       
+        round_number = 0
+        last_update = 0
+        delta = 1 / self.properties["refresh"]
+
+        # Game loop.
+        while round_number <= self.properties["win-round"]:
+            current = time.time()
+            # Only run on allocated refresh.
+            if current - last_update > delta:
+                round_number += 1
+                self._update_cells()
+                grid = _update_grid(self._generate_grid)
+                self.output(grid, sys.stdout)
+                last_update = current
+                    
+    def output(self, grid, stream):
+        """Writes the grid to the given output stream.
+        Parameters:
+            - grid      the grid to output
+            - stream    where to write the grid
+        """
+        output = ""
+        for row in grid:
+            output += "".join(row) + "\n"
+        output.rstrip("\n")
+        print(output, file=stream)
+        
+    def reset(self):
+        """Resets the game back to an uninitialised game."""
+        self.load_defaults()
+        self.cells = dict()
+        self.teams = dict()
         
 def between(target, lower, higher):
     """Determines if the target number is between lower and higher (including
@@ -198,295 +408,3 @@ def between(target, lower, higher):
             end points)
     """
     return lower <= target <= higher
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-def generate(file):
-    """Initialise a dictionary of cells from a file.
-
-    For each new cell (that isn't a dead cell) that doesn't exist, a new team
-    is created for that cell group.
-
-    The width and height properties are changed accordingly.
-    
-    Parameters:
-        file    - The file to read from.
-
-    Returns:
-        A tuple containing:
-            - dict object of cells
-            - a dict object of teams (maps a team to itself)
-        in  the formate (cells, teams).
-    """
-    global cells
-    global teams
-    cells = dict()
-    teams = dict()
-    
-    with open(file) as readable:
-        for y, row in enumerate(readable):
-            row = row.strip()
-            for x, cell in enumerate(row):
-                if cell == ".":
-                    continue
-                # Create a new team.
-                if cell not in teams:
-                    new_team = Team(cell)
-                    teams[new_team.view] = new_team
-                
-                team = teams[cell]
-                team.score += 1
-                cells[(x, y)] = Cell(x, y, team, properties["death-age"])
-        # Update properties.
-        properties["width"] = x + 1
-        properties["height"] = y + 1
-        
-    return cells, teams
-
-def update_grid(grid, cells):
-    """Places all the cells in the given grid.
-    Parameters:
-        - grid      The grid to place the cells in
-        - cells     The cells to place in the grid
-    """
-    for position, cell in cells.items():
-        grid[position[1]][position[0]] = cell.team.view
-        
-    return grid
-    
-def reload(properties):
-    """Removes all values from the cells set and clears the grid.
-    Returns:
-        - a tuple in the form of
-        (new 2D of empty strings, empty set of cells)
-    """
-    return generate_grid(properties), dict()
-
-def get_neighbours(cells, x, y):
-    """Finds all neighbours (the 8 surrounding squares) of a cell.
-
-    Parameters:
-        - cells     The set of cells to search in.
-        - x         The x position of the cell to search around.
-        - y         The y position fo the cell to search around.
-
-    Returns:
-        A list object of neighbouring cells.
-    """
-    neighbours = []
-    for neighbour_y in range(-1, 2):
-        for neighbour_x in range(-1, 2):
-            if ((neighbour_x != 0 and neighbour_y != 0) and
-                    0 <= x+neighbour_x < properties["width"] and 0 <= y+neighbour_y < properties["height"]):
-                if (x + neighbour_x, y + neighbour_y) in cells:
-                    neighbours.append(cells[(x+neighbour_x, y+neighbour_y)])
-                else:
-                    neighbours.append(("DEAD", (x+neighbour_x, y+neighbour_y)))
-    return neighbours
-
-def update(cells):
-    """Updates the state of all of the cells.
-    Returns:
-        - a new set of cells"""
-    new_cells = dict()
-    dead_cells = []
-
-    # Kill alive cells.
-    for cell in cells.values():
-        #if not cell.update():
-        if True:
-            neighbours = get_neighbours(cells, *cell.position)
-            
-            # Count number of enemy cells.
-            enemies = 0
-            for neighbour in neighbours:
-                # Add dead cells to the list of dead cells.
-                if isinstance(neighbour, tuple):
-                    dead_cells.append(neighbour[1])
-                # Check if cell is an enemy.
-                elif neighbour.team != cell.team:
-                    enemies += 1
-
-            # Add new cell if it is to not be killed.    
-            if enemies < properties["to-kill"]:
-                new_cells[cell.position] = cell
-
-    # Revive dead cells.
-    for dead in dead_cells:
-        neighbours = get_neighbours(cells, *dead)
-        total_neighbours = 0
-        team_control = dict()
-        # Handle neighbours.
-        for neighbour in neighbours:
-            if not isinstance(neighbour, tuple):
-                total_neighbours += 1
-                # Add team.
-                if neighbour.team not in team_control:
-                    team_control[neighbour.team] = 1
-                else:
-                    team_control[neighbour.team] += 1
-        # Revive the cell.
-        if total_neighbours >= 0:
-            max_control = max(team_control.values())
-            if total_neighbours - max_control < total_neighbours / 2:
-                # get team.
-                for team, value in team_control.items():
-                    if value == max_control:
-                        break
-                new_cells[dead] = Cell(dead[0], dead[1], team, properties["death-age"])
-            else:
-                # FIXME change to while loop subtracting from total_neighbours
-                #       break when remainder < max_control.
-                # get all teams with the highest control.
-                controlling_teams = []
-                for team, value in team_control.items():
-                    if value == max_control:
-                        controlling_teams.append(team)
-
-                controlling_teams = sorted(controlling_teams, key = lambda x:x.score, reverse=True)
-                # Check if top two teams have the same score.
-                # Only revive if not the same.
-                if controlling_teams[0].score != controlling_teams[1].score:
-                    new_cells[dead] = Cell(dead[0], dead[1], controlling_teams[0], properties["death-age"])
-                    
-    return new_cells
-
-def output(grid, stream):
-    """Displays the grid.
-    Parameters:
-        - grid      the grid to output
-        - stream    where to output the grid
-    """
-    #print("\n" * 50, file=stream) # Clearing the screen.
-    output = ""
-    for row in grid:
-        output += "".join(row) + "\n"
-    output.rstrip("\n")
-    print(output, file=stream)
-    
-
-def loop():
-    """The main loop of the game of life war.
-
-    Runs a constant loop (updating x times per second based on refresh property)
-    The loop ends when a winner is determined.
-    """
-    global cells
-    global properties
-    
-    round_number = 0
-    last = 0
-    delta = 1 / properties["refresh"]
-    
-    while round_number < properties["win-round"]:
-        current = time.time()
-        if current - last > delta:
-            round_number += 1
-            cells = update(cells)
-            grid = update_grid(generate_grid(properties), cells)
-            output(grid, stdout)
-            last = current
-
-
-# -- On import -----------------------------------------------------------------
-# Add validation for certain properties.
-bounds["width"] = (between, (10, 100,))
-bounds["height"] = (between, (10, 50,))
-bounds["refresh"] = (between, (1, 60,))
-bounds["death-age"] = (between, (1, 32,))
-bounds["win-round"] = (between, (128, 65536,))
-bounds["to-kill"] = (between, (1, 8,))
-
-load_defaults()
-cells = dict()
-teams = dict()
-grid = generate_grid(properties)
