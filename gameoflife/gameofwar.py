@@ -388,7 +388,7 @@ class GameOfWar():
 
         # Display initial grid.
         grid = self._update_grid(self._generate_grid())
-        self.output(grid, sys.stdout)
+        self.output(grid, 0, sys.stdout)
 
         # Game loop.
         while round_number <= self.properties["win-round"]:
@@ -398,7 +398,7 @@ class GameOfWar():
                 round_number += 1
                 self._update_cells()
                 grid = self._update_grid(self._generate_grid())
-                self.output(grid, sys.stdout)
+                self.output(grid, round_number, sys.stdout)
                 last_update = current
 
                 # Find winner:
@@ -410,15 +410,15 @@ class GameOfWar():
             highest = sorted(self.teams.values(), key=lambda team:team.score, reverse=True)
             winner = highest[0]
 
-        print(f"The winner is {str(winner)}")
+        print(f"The winner is:\n{str(winner)}")
                         
-    def output(self, grid, stream):
+    def output(self, grid, round_number, stream):
         """Writes the grid to the given output stream.
         Parameters:
             - grid      the grid to output
             - stream    where to write the grid
         """
-        output = ""
+        output = f"ROUND {round_number}:\n"
         for row in grid:
             output += "".join(row) + "\n"
         output.rstrip("\n")
