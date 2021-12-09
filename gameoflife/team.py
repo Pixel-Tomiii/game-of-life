@@ -32,11 +32,8 @@ class Team():
 
     def __eq__(self, other):
         # Compare to another team.
-        if isinstance(other, Team):
+        if isinstance(other, Team|int):
             return self.__team_id == other.__team_id
-        # Compare to another team id.
-        if isinstance(other, int):
-            return self.__team_id == other
         # Compare to another view.
         if isinstance(other, str):
             return self.__view == other
