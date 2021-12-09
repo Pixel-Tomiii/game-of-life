@@ -38,3 +38,6 @@ class Team():
         if isinstance(other, str):
             return self.__view == other
         return False
+
+    def __str__(self):
+        return f"Team id: {self.__team_id}\nView: {self.__view}\nScore: {self.score}"
