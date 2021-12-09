@@ -10,15 +10,14 @@ class Cell():
         self.__team = team
         self.__age = age
 
-
     def update(self):
         """Reduces the age of the cell by 1.
         Returns:
-            True if the cell died. A cell is dead if it's age is less than
+            False if the cell died. A cell is dead if it's age is less than
             or equal to 0.
         """
         self.__age -= 1
-        return self.__age <= 0
+        return self.__age > 0
 
     @property
     def team(self):
