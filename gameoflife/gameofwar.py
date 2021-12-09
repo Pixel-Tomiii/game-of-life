@@ -70,23 +70,23 @@ class GameOfWar():
                             - min=1
                             - default=3
         """
-        properties["width"] = 30
-        validations["width"] = (between, (10, 100))
+        self.properties["width"] = 30
+        self.validations["width"] = (between, (10, 100))
         
-        properties["height"] = 30
-        validations["height"] = (between, (10, 50))
+        self.properties["height"] = 30
+        self.validations["height"] = (between, (10, 50))
         
-        properties["refresh"] = 4
-        validations["refresh"] = (between, (1, 60))
+        self.properties["refresh"] = 4
+        self.validations["refresh"] = (between, (1, 60))
         
-        properties["death-age"] = 4
-        validations["death-age"] = (between, (1, 32))
+        self.properties["death-age"] = 4
+        self.validations["death-age"] = (between, (1, 32))
         
-        properties["win-round"] = 512
-        validations["win-round"] = (between, (128, 65536))
+        self.properties["win-round"] = 512
+        self.validations["win-round"] = (between, (128, 65536))
         
-        properties["to-kill"] = 3
-        validations["to-kill"] = (between, (1, 8))
+        self.properties["to-kill"] = 3
+        self.validations["to-kill"] = (between, (1, 8))
             
     def set_property(self, prop, val):
         """Sets the given property to the given value.
@@ -106,7 +106,7 @@ class GameOfWar():
             val = int(val)
 
         # Validate the value.
-        if self.validate(prop, val):
+        if self._validate(prop, val):
             self.properties[prop] = val
         else:
             raise ValueError(f"'{val}' is not valid for property: '{prop}'")
@@ -121,7 +121,7 @@ class GameOfWar():
         Returns:
             True if the value is valid.
         """
-        func, args = self.validations["prop"]
+        func, args = self.validations[prop]
         return func(val, *args)
 
     def load_config(self, config_file):
@@ -161,22 +161,32 @@ class GameOfWar():
                 x = 0
                 # Iterate through every 2 characters.
                 # Loop must be broken at some point.
-                while (amount := int(next(char_gen, -1)), value := next(char_gen, -1)):
+                while True:
+                    amount = ""
+                    value = ""
+                    
+                    # Fetching amount.
+                    while (char:=next(char_gen, "")) and char.isdigit():
+                        amount += char
+                        
+                    # Check for an amount:
+                    if amount:
+                        amount = int(amount)
+                    # Break out of loop.
+                    else:
+                        break
+                    
+                    # Setting value to last char.
+                    value = char
                     # Error reading line.
                     if value == -1 and amount != -1:
                         raise ValueError("Not enough values to fetch. Please check file formatting.")
-
-                    # Stop scanning the line.
-                    if amount == -1 == value:
-                        break
 
                     # Not interested in dead cells.
                     if value == ".":
                         x += amount
                         continue
-
-                    while x <= amount:
-                        x += 1
+                    for x in range(x, x+amount):
                         # Team creation.
                         if value not in self.teams:
                             self.teams[value] = Team(value)
@@ -186,19 +196,7 @@ class GameOfWar():
                         cell = Cell(x, y, team, self.properties["death-age"])
                         self.cells[(x, y)] = cell
                         team.score += 1
-    
-    def _generate_grid(self):
-        """Generates a grid of dead cells of size width, height.
-
-        The default 'view' of a dead cell is '.'
-        
-        Returns:
-            - a 2D array of dead cells.
-        """
-        width = self.properties["width"]
-        height = self.properties["height"]
-        return [["." for x in range(width)] for y in range(height)]
-
+                        
     def load_game(self, directory):
         """Loads a game from a directory.
 
@@ -243,11 +241,24 @@ class GameOfWar():
             if sum(reserved.values()) == len(reserved):
                 # Load information.
                 # Config data.
-                self.load_config(directory + needed_files["config"])
-                self.load_grid(directory + needed_files["cells"])
+                self.load_config(os.curdir + directory + needed_files["config"])
+                self.load_cells(os.curdir + directory + needed_files["cells"])
+                return
 
-        raise ValueError("Expected 1 of each unique file (.data, .config, .cells).")
+        raise ValueError("Expected 1 of each unique file (.config or .cells).")
 
+    def _generate_grid(self):
+        """Generates a grid of dead cells of size width, height.
+
+        The default 'view' of a dead cell is '.'
+        
+        Returns:
+            - a 2D array of dead cells.
+        """
+        width = self.properties["width"]
+        height = self.properties["height"]
+        return [["." for x in range(width)] for y in range(height)]
+    
     def _update_grid(self, grid):
         """Places all the cells in the given grid.
         Parameters:
@@ -257,7 +268,7 @@ class GameOfWar():
         Returns:
             - A new grid showing the states of all cells.
         """
-        for (x, y), cell in cells.items():
+        for (x, y), cell in self.cells.items():
             grid[y][x] = cell.team.view
             
         return grid
@@ -293,14 +304,14 @@ class GameOfWar():
         new_cells = dict()
         dead_cells = set()
 
-        for cell in cells.values():
+        for cell in self.cells.values():
             # Cell dies to old age.
             if cell.update():
                 alive_neighbours, dead_neighbours = self._get_neighbours(*cell.position)
 
                 # Add dead neighbours to set to work through after working alive cells.
-                for cell in dead_neighbours:
-                    dead_cells.add(cell)
+                for neighbour in dead_neighbours:
+                    dead_cells.add(neighbour)
                 
                 # Count number of enemy cells.
                 enemies = 0
@@ -319,7 +330,7 @@ class GameOfWar():
         for cell in dead_cells:
             alive_neighbours, dead_neighbours = self._get_neighbours(*cell)
             # Need at least 3 alive cells.
-            if len(alive_cells < 3):
+            if len(alive_neighbours) < 3:
                 continue
 
             controllers = dict()
@@ -349,7 +360,7 @@ class GameOfWar():
             else:
                 dominant = highest[0]
                 
-            new_cells[cell] = Cell(cell[0], cell[1], dominant, self.properties["death_age"])
+            new_cells[cell] = Cell(cell[0], cell[1], dominant, self.properties["death-age"])
             dominant.score += 1
 
         # Overwrite self.cells
@@ -365,6 +376,10 @@ class GameOfWar():
         last_update = 0
         delta = 1 / self.properties["refresh"]
 
+        # Display initial grid.
+        grid = self._update_grid(self._generate_grid())
+        self.output(grid, sys.stdout)
+
         # Game loop.
         while round_number <= self.properties["win-round"]:
             current = time.time()
@@ -372,7 +387,7 @@ class GameOfWar():
             if current - last_update > delta:
                 round_number += 1
                 self._update_cells()
-                grid = _update_grid(self._generate_grid)
+                grid = self._update_grid(self._generate_grid())
                 self.output(grid, sys.stdout)
                 last_update = current
                     
