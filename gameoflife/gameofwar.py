@@ -93,7 +93,7 @@ class GameOfWar():
         self.validations["to-kill"] = (between, (1, 8))
 
         self.properties["output"] = "true"
-        self.validations["output"] = (lambda x: x.lower() in ("true", "false"), (,))
+        self.validations["output"] = (lambda x: x.lower() in ("true", "false"), ())
             
     def set_property(self, prop, val):
         """Sets the given property to the given value.
