@@ -1,5 +1,5 @@
-from gameoflife import gameofwar
-from gameoflife import convertor
+from gameofwar import game_of_war
+from gameofwar import convertor
 import os
 
 if __name__ == "__main__":
@@ -20,7 +20,7 @@ if __name__ == "__main__":
             break
         
     # Start a game.
-    game_of_war = gameofwar.GameOfWar()
+    game_of_war = game_of_war.GameOfWar()
     while True:
         result = input("Enter game to start: ")
         try:

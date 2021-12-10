@@ -23,9 +23,9 @@ import time
 import os
 import sys
 
-from gameoflife.cell import Cell
-from gameoflife.team import Team
-
+from gameofwar.cell import Cell
+from gameofwar.team import Team
+    
 properties = dict()
 bounds = dict()
 
