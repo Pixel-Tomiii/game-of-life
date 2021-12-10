@@ -18,6 +18,7 @@ or the last team standing (e.g one team left)
 """
 # TODO: use multiprocessing module to speed up
 # cell updates.
+# TODO: find loops and break once loop is found
 import time
 import os
 import sys
@@ -65,10 +66,6 @@ class GameOfWar():
                             - max=65536
                             - min=128
                             - default=512
-            - to-kill   how many neighbouring enemies are needed to kill a cell.
-                            - max=8
-                            - min=1
-                            - default=3
             - output    whether or not the grid is showen each round (still
                         shows the initial and final grid)
                             - default=true
@@ -89,9 +86,6 @@ class GameOfWar():
         self.properties["win-round"] = 512
         self.validations["win-round"] = (between, (128, 65536))
         
-        self.properties["to-kill"] = 3
-        self.validations["to-kill"] = (between, (1, 8))
-
         self.properties["output"] = "true"
         self.validations["output"] = (lambda x: x.lower() in ("true", "false"), ())
             
@@ -337,13 +331,16 @@ class GameOfWar():
                         enemies += 1
 
                 # Add new cell if it is to not be killed.    
-                if enemies < self.properties["to-kill"]:
+                if len(alive_neighbours) - enemies >= enemies:
                     new_cells[cell.position] = cell
                 else:
                     cell.team.score -= 1
-                    
                     if cell.team.score == 0:
                         del self.teams[cell.team.view]
+            else:
+                cell.team.score -= 1
+                if cell.team.score == 0:
+                    del self.teams[cell.team.view]
 
         # Reviving dead cells.
         for cell in dead_cells:
@@ -381,6 +378,9 @@ class GameOfWar():
                 
             new_cells[cell] = Cell(cell[0], cell[1], dominant, self.properties["death-age"])
             dominant.score += 1
+            # Re add deleted team to teams dictionary.
+            if dominant.view not in self.teams:
+                self.teams[dominant.view] = dominant
 
         # Overwrite self.cells
         self.cells = new_cells
@@ -390,7 +390,7 @@ class GameOfWar():
 
         Runs a constant loop (updating x times per second based on refresh property)
         The loop ends when a winner is determined.
-        """       
+        """            
         round_number = 0
         last_update = time.time()
         delta = 1 / self.properties["refresh"]
@@ -415,7 +415,7 @@ class GameOfWar():
 
                 # Find winner:
                 if len(self.teams) == 1:
-                    winner = self.teams.values()[0]
+                    winner = list(self.teams.values())[0]
                     break
         else:
             # Calculate who won based on score.
