@@ -48,11 +48,11 @@ class GameOfWar():
         Properties are:
             - width     the width of the grid
                             - max=100
-                            - min=10
+                            - min=5
                             - default=30
             - height    the height of the grid
                             - max=50
-                            - min=10
+                            - min=5
                             - default=30
             - refresh   how many times per second the grid will update
                             - max=60
@@ -72,10 +72,10 @@ class GameOfWar():
                             - other=false
         """
         self.properties["width"] = 30
-        self.validations["width"] = (between, (10, 100))
+        self.validations["width"] = (between, (5, 100))
         
         self.properties["height"] = 30
-        self.validations["height"] = (between, (10, 50))
+        self.validations["height"] = (between, (5, 50))
         
         self.properties["refresh"] = 4
         self.validations["refresh"] = (between, (1, 60))
