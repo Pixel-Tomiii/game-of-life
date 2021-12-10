@@ -9,9 +9,8 @@ Dead cells that are surrounded by 3 or more cells come to life. They are
 controlled by the the dominant team (the team with the most cells surrounding
 it). In the event of a tie, the team with the most cells takes control.
 
-Alive cells can be killed by enemy cells when there are 3 or enemy cells
-surrounding it. The alive cell is consumed by the team with the most
-neighbours if their neighbours is at least 3.
+Alive cells can be killed by enemy cells when there are at least as many enemy
+neighbours as there are allied neighbours. The alive cell is killed.
 
 The winning team is the team with the most cells after the round timer runs out
 or the last team standing (e.g one team left)
@@ -330,7 +329,7 @@ class GameOfWar():
                     if neighbour.team != cell.team:
                         enemies += 1
 
-                # Add new cell if it is to not be killed.    
+                # Add new cell if it is to not be killed.
                 if len(alive_neighbours) - enemies >= enemies:
                     new_cells[cell.position] = cell
                 else:
